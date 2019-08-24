@@ -2,6 +2,11 @@ import gc
 import itertools
 import numpy as np
 
+#
+# TODO: write tests!!! Not sure if the current implementation is correct...
+#  Actually it might be correct, but the visualisation might be wrong...
+#
+
 
 class KMedoids:
 
@@ -60,7 +65,6 @@ class KMedoids:
         """
         Assign each point to cluster with closest medoid.
         :param medoids: IDs of medoids
-        :param distances: distance matrix
         :return:
         """
         distances_to_medoids = self.dist_matrix[:, medoids]
