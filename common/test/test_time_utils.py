@@ -2,7 +2,7 @@ from unittest import TestCase, main
 import numpy as np
 import pandas as pd
 
-from ..time_utils import normalize_tz, infer_freq
+from common.time_utils import normalize_tz, infer_freq
 
 
 class TestInferFreq(TestCase):

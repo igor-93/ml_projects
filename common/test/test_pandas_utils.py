@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from numba import jit
 
-from ..pandas_utils import column_name_to_id, rolling_multi_columns
+from common.pandas_utils import column_name_to_id, rolling_multi_columns
 
 TOL = 1e-9
 

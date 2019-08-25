@@ -2,7 +2,7 @@ import numpy as np
 from scipy.sparse import csr_matrix
 from unittest import TestCase, main
 
-from ..similarity import get_similarity, SimMeasure
+from clustering.similarity import get_similarity, SimMeasure
 
 
 class TestSimilarity(TestCase):

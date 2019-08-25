@@ -3,7 +3,7 @@ from scipy.sparse import coo_matrix
 
 from unittest import TestCase, main
 
-from ..sparse_mat import drop_data, drop_rows, drop_cols
+from common.sparse_mat import drop_data, drop_rows, drop_cols
 
 
 class TestUtils(TestCase):

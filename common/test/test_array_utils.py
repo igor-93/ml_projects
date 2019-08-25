@@ -1,7 +1,7 @@
 import numpy as np
 from unittest import TestCase, main
 
-from ..array_utils import find_runs, split_array_3
+from common.array_utils import find_runs, split_array_3
 
 
 class TestFundRuns(TestCase):

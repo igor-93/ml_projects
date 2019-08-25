@@ -2,7 +2,7 @@ from unittest import TestCase, main
 import numpy as np
 import pandas as pd
 
-from ..ema import ewma, ewma_span
+from common.ema import ewma, ewma_span
 
 TOL = 1e-9
 
