@@ -1,12 +1,14 @@
 from collections import Counter
 from unittest import TestCase, main, skip
+
+import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.datasets import make_blobs
 import scipy.stats as ss
 
 from scipy.spatial.distance import pdist, squareform
 
-from clustering.kmedoids import KMedoids
+from clustering.kmedoids import KMedoids, pdist_from_ids, assign_points_to_clusters
 
 
 class TestKMedoids(TestCase):
@@ -47,6 +49,31 @@ class TestKMedoids(TestCase):
                     marker='x', s=169, linewidths=3, color='k')
         plt.title('Clusters')
         plt.show()
+
+
+class TestHelpers(TestCase):
+
+    def test_pdist(self):
+        dist_mat = [[0, 1, 2], [1, 0, 1], [2, 1, 0]]
+        dist_mat = np.array(dist_mat)
+
+        output = pdist_from_ids(dist_mat, [0, 1], [1, 2])
+        expected = np.array([[1, 2], [0, 1]])
+
+        np.testing.assert_array_equal(output, expected)
+
+    def test_assign_points_to_clusters(self):
+        dist_mat = [[0, 1, 2.2], [1, 0, 1.2], [2.2, 1, 0]]
+        dist_mat = np.array(dist_mat)
+
+        output = assign_points_to_clusters(dist_mat, [0, 2])
+        expected = np.array([0, 0, 2])
+
+        np.testing.assert_array_equal(output, expected)
+
+    def test_compute_new_medoid(self):
+        # TODO: implement me
+        pass
 
 
 if __name__ == '__main__':

@@ -2,11 +2,6 @@ import gc
 import itertools
 import numpy as np
 
-#
-# TODO: write tests!!! Not sure if the current implementation is correct...
-#  Actually it might be correct, but the visualisation might be wrong...
-#
-
 
 class KMedoids:
 
@@ -42,16 +37,17 @@ class KMedoids:
         print('Medoids initialized: ', curr_medoids)
 
         it = 0
+        clusters = np.zeros(self.dist_matrix.shape[0])
         # Until the medoids stop updating, do the following:
         while not ((old_medoids == curr_medoids).all()):
             print('Running iter %d' % it)
             # Assign each point to cluster with closest medoid.
-            clusters = self.__assign_points_to_clusters(curr_medoids)
+            clusters = assign_points_to_clusters(self.dist_matrix, curr_medoids)
 
             # Update cluster medoids to be lowest cost point.
             for curr_medoid in curr_medoids:
                 cluster = np.where(clusters == curr_medoid)[0]
-                new_medoids[curr_medoids == curr_medoid] = self.__compute_new_medoid(cluster)
+                new_medoids[curr_medoids == curr_medoid] = compute_new_medoid(self.dist_matrix, cluster)
 
             old_medoids[:] = curr_medoids[:]
             curr_medoids[:] = new_medoids[:]
@@ -60,31 +56,6 @@ class KMedoids:
 
         gc.collect()
         return clusters, curr_medoids
-
-    def __assign_points_to_clusters(self, medoids):
-        """
-        Assign each point to cluster with closest medoid.
-        :param medoids: IDs of medoids
-        :return:
-        """
-        distances_to_medoids = self.dist_matrix[:, medoids]
-
-        clusters = medoids[np.argmin(distances_to_medoids, axis=1)]
-        clusters[medoids] = medoids
-        return clusters
-
-    def __compute_new_medoid(self, cluster):
-        """
-        Computes the new medoid for the given cluster
-        :param cluster:
-        :param distances:
-        :return:
-        """
-        mask = np.ones(self.dist_matrix.shape)
-        mask[np.ix_(cluster, cluster)] = 0.
-        cluster_distances = np.ma.masked_array(data=self.dist_matrix, mask=mask, fill_value=10e9)
-        costs = cluster_distances.sum(axis=1)
-        return costs.argmin(axis=0, fill_value=10e9)
 
     def __init_random(self, k):
         # Pick k random, unique medoids.
@@ -109,7 +80,7 @@ class KMedoids:
 
         # get square distances of all points to the mean
         # dists = dist(common, means[0, np.newaxis], xtx)
-        dists = self.__dist_id(np.arange(self.n_points), fst_mean)
+        dists = pdist_from_ids(self.dist_matrix, np.arange(self.n_points), fst_mean)
 
         probs = np.empty(self.n_points)
 
@@ -122,27 +93,59 @@ class KMedoids:
             medoids[i] = new_mean_idx
 
             # calculate new distances to the closest means
-            new_dists = self.__dist_id(np.arange(self.n_points), new_mean_idx)
+            new_dists = pdist_from_ids(self.dist_matrix, np.arange(self.n_points), new_mean_idx)
 
             dists = np.minimum(dists, new_dists)
 
         return medoids
 
-    def __dist_id(self, list1, list2):
-        """
-        Returns pair-wise distances between data points with ids in list1 and ids in list2.
-        :param list1: ids of data points in the first set
-        :param list2: ids of data points in the second set
-        :return: result[i, j] = distance between data[list1[i]] and data[list2[j]]
-        """
 
-        if not np.isscalar(list2):
-            c = list(itertools.product(list1, list2))
-            c1, c2 = zip(*c)
-            res = np.asarray(self.dist_matrix[c1, c2]).reshape((len(list1), len(list2)))
-        else:
-            c1 = list1
-            c2 = list2
-            res = np.asarray(self.dist_matrix[c1, c2]).squeeze()
+def assign_points_to_clusters(dist_matrix, medoids):
+    """
+    Assign each point to cluster with closest medoid.
+    :param dist_matrix
+    :param medoids: IDs of medoids
+    :return:
+    """
 
-        return res
+    medoids = np.array(medoids)
+    distances_to_medoids = dist_matrix[:, medoids]
+
+    clusters = medoids[np.argmin(distances_to_medoids, axis=1)]
+    clusters[medoids] = medoids
+    return clusters
+
+
+def compute_new_medoid(dist_matrix, cluster):
+    """
+    Computes the new medoid for the given cluster
+    :param dist_matrix
+    :param cluster:
+    :return:
+    """
+    mask = np.ones(dist_matrix.shape)
+    mask[np.ix_(cluster, cluster)] = 0.
+    cluster_distances = np.ma.masked_array(data=dist_matrix, mask=mask, fill_value=10e9)
+    costs = cluster_distances.sum(axis=1)
+    return costs.argmin(axis=0, fill_value=10e9)
+
+
+def pdist_from_ids(dist_matrix, list1, list2):
+    """
+    Returns pair-wise distances between data points with ids in list1 and ids in list2.
+    :param dist_matrix: entri i,j represent the distance between point i and j
+    :param list1: ids of data points in the first set
+    :param list2: ids of data points in the second set
+    :return: result[i, j] = distance between data[list1[i]] and data[list2[j]]
+    """
+
+    if not np.isscalar(list2):
+        c = list(itertools.product(list1, list2))
+        c1, c2 = zip(*c)
+        res = np.asarray(dist_matrix[c1, c2]).reshape((len(list1), len(list2)))
+    else:
+        c1 = list1
+        c2 = list2
+        res = np.asarray(dist_matrix[c1, c2]).squeeze()
+
+    return res
