@@ -1,6 +1,8 @@
 # ml_utils
 
-Utility functions commonly used in machine learning projects. I try to write the code compatible with scikit-learn.
+Repository contains all ML-related code. 
+Both functions commonly used in machine learning projects, 
+as well as actual ML projects.
 
 ### Tests
 From the `ml_utils/` directory run `python -m unittest discover`
