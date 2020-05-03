@@ -1,4 +1,7 @@
 # Created by .ignore support plugin (hsz.mobi)
+# project folders to stay private
+.DS_Store
+
 ### Python template
 # Byte-compiled / optimized / DLL files
 __pycache__/
