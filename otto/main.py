@@ -22,7 +22,7 @@ from skopt.utils import use_named_args
 
 from xgboost import XGBClassifier
 
-from otto.sparse_feature_compressor import SparseFeatureCompressor
+from otto.nn_model import train_nn, MyNN
 
 main_params = {
     "cv": 5,  # 10
@@ -46,148 +46,22 @@ def confusion_matrix_df(y_true, y_pred, n_classes=9):
     return cm
 
 
-def run_rf(X, y, cv, tsne_or_sfc=None, rf_or_et="rf", max_feats=10):
-    n_classes = len(np.unique(y))
-    n_hyper_runs = main_params["n_hyper_runs"]
-    n_hyper_starts = main_params["n_hyper_starts"]
-
-    space = [
-        Integer(1, 10, name='rf__max_depth'),
-        Integer(2, max_feats, name='rf__max_features'),
-        Integer(1, 50, name='rf__min_samples_leaf'),
-        Real(0.2, 0.6, "uniform", name='rf__max_samples')
-    ]
-
-    n_estimators = 1000
-    if rf_or_et == "rf":
-        clf = RandomForestClassifier(n_estimators=n_estimators, n_jobs=-1)
-    elif rf_or_et == "et":
-        clf = ExtraTreesClassifier(n_estimators=n_estimators, n_jobs=-1)
-    elif rf_or_et == "xgb":
-        clf = XGBClassifier(n_estimators=n_estimators, n_jobs=-1)
-        space = [
-            Integer(1, 10, name='rf__max_depth'),
-            Integer(1, 50, name='rf__min_samples_leaf'),
-            Real(10 ** -5, 10 ** 0, "log-uniform", name='rf__learning_rate'),
-            Real(1e-3, 1, "log-uniform", name='rf__reg_alpha'),
-            Real(1e-3, 1, "log-uniform", name='rf__reg_lambda'),
-            Real(0.2, 0.6, "uniform", name='rf__subsample')
-        ]
-    elif rf_or_et == "knn":
-        space = [
-            Integer(3, 200, name='rf__n_neighbors'),
-            Categorical(["uniform", "distance"], name='rf__weights'),
-            Integer(1, 2, name='rf__p'),
-        ]
-        clf = KNeighborsClassifier(n_jobs=-1)
-    elif rf_or_et == "mlp":
-        clf = MLPClassifier(learning_rate="adaptive", verbose=False, early_stopping=True)
-        space = [
-            Categorical([(256, 256), (256, ), (128, ), (32, 64, 32)], name='rf__hidden_layer_sizes'),
-            Real(1e-5, 10, "log-uniform", name='rf__alpha'),
-        ]
-        n_hyper_runs = 8
-        n_hyper_starts = 3
-    else:
-        raise ValueError()
-
-    pipeline_list = [('rf', clf)]
-
-    if tsne_or_sfc == "sfc":
-        dim_red = SparseFeatureCompressor()
-        pipeline_list = [('dim_red', dim_red)] + pipeline_list
-
-        space.append(Integer(5, 30, name="dim_red__n_components"))
-    elif tsne_or_sfc is None:
-        pass
-    else:
-        raise ValueError()
-
-    pipe = Pipeline(pipeline_list)
-
-    @use_named_args(space)
-    def objective_old(**params):
-        pipe.set_params(**params)
-        y_pred = []
-        y_true = []
-        for train_index, test_index in cv.split(X, y):
-            X_train, X_test = X[train_index], X[test_index]
-            y_train, y_test = y[train_index], y[test_index]
-            pipe.fit(X_train, y_train)
-            y_pred.append(pipe.predict_proba(X_test))
-            y_true.append(y_test)
-
-        y_pred = np.vstack(y_pred)
-        y_true = np.hstack(y_true)
-        assert len(y_pred.shape) == 2, f"y_pred: {y_pred.shape}"
-        assert len(y_true.shape) == 1, f"y_true: {y_true.shape}"
-        assert y_pred.shape[1] == n_classes
-        # assert np.array_equal(clf.classes_, np.arange(1, 10)), f"classes_ is not sorted: {rf.classes_}"
-
-        loss = log_loss(y_true=y_true, y_pred=y_pred)
-        return loss
-
-    @use_named_args(space)
-    def objective(**params):
-        pipe.set_params(**params)
-        return -np.mean(cross_val_score(pipe, X, y, cv=cv, n_jobs=-1, scoring="neg_log_loss"))
-
-    print(f"Searching for hyper-params: n_hyper_runs={n_hyper_runs}")
-    res_gp = gp_minimize(objective, space, n_calls=n_hyper_runs,
-                         n_random_starts=n_hyper_starts, random_state=0, verbose=True)
-
-    best_named_params = {s.name: p for s, p in zip(space, res_gp.x)}
-    print(f"""RF Best parameters: {best_named_params}""")
-
-    print(f"Best score={res_gp.fun}")
-    take_best = main_params["n_best_from_base"]
-    print("res_gp.func_vals ", res_gp.func_vals)
-    idx = np.argpartition(res_gp.func_vals, take_best, axis=0)[:take_best]
-    # k_best_params = np.array(res_gp.x_iters)[idx]
-    k_best_params = itemgetter(*idx)(res_gp.x_iters)
-    print("k_best_params ", k_best_params)
-
-    # for each set of top k params, train a model on CV - 1 folds and then predict the other set
-    level1_predictions = []
-    for params_i in range(take_best):
-        params = k_best_params[params_i]
-        print("params: ", params)
-        named_params = {s.name: p for s, p in zip(space, params)}
-        pipe.set_params(**named_params)
-
-        y_pred = np.zeros((X.shape[0], n_classes), dtype=float)
-        for train_index, test_index in cv.split(X, y):
-            X_train, X_test = X[train_index], X[test_index]
-            y_train, y_test = y[train_index], y[test_index]
-            pipe.fit(X_train, y_train)
-            y_pred[test_index, :] = pipe.predict_proba(X_test)
-
-        print("y_pred sum: ", (y_pred.sum(axis=1) == 1.0).all())
-
-        level1_predictions.append(y_pred)
-
-    level1_predictions = np.hstack(level1_predictions)
-    assert level1_predictions.shape[1] == take_best * n_classes, f"level1_predictions: {level1_predictions.shape}"
-    print("####################")
-    return level1_predictions
-
-
 def load_data(data_dir):
     assert os.path.isdir(data_dir)
     file_train = os.path.join(data_dir, "train.csv")
-    # file_test = os.path.join(data_dir, "test.csv")
+    file_test = os.path.join(data_dir, "test.csv")
     df_train = pd.read_csv(file_train, index_col=0)
-    # df_test = pd.read_csv(file_test, index_col=0)
+    df_test = pd.read_csv(file_test, index_col=0)
 
     df_train["target"] = df_train["target"].str.get(-1).astype(int)
     print(f"Data shape: {df_train.shape}")
 
     # shuffle
     df_train = df_train.sample(frac=1, random_state=442)
-    return df_train
+    return df_train, df_test
 
 
-def pre_process(df_train: pd.DataFrame):
+def pre_process(df_train: pd.DataFrame, df_test: pd.DataFrame):
     n, d = df_train.shape
     d = d - 1 # remove target dim
     feat_cols = [c for c in df_train.columns if "feat" in c]
@@ -195,8 +69,10 @@ def pre_process(df_train: pd.DataFrame):
     # add new features
     d = d + 1
     df_train[f"feat_{d}"] = (df_train[feat_cols] != 0).sum(axis=1)
+    df_test[f"feat_{d}"] = (df_test[feat_cols] != 0).sum(axis=1)
     d = d + 1
     df_train[f"feat_{d}"] = df_train[feat_cols].sum(axis=1)
+    df_test[f"feat_{d}"] = df_test[feat_cols].sum(axis=1)
 
     to_drop_before_pca = ['feat_46', 'feat_13', 'feat_44', 'feat_93', 'feat_63', 'feat_74',
                           'feat_81', 'feat_51', 'feat_12', 'feat_6', 'feat_31', 'feat_87',
@@ -204,7 +80,8 @@ def pre_process(df_train: pd.DataFrame):
 
     # split into X, y
     df_clean = df_train.drop(columns=to_drop_before_pca)
-    X = df_clean.drop(columns="target")
+    df_clean_te = df_test.drop(columns=to_drop_before_pca)
+    X = df_clean.drop(columns="target").astype(dtype=float)
     y = df_clean["target"] - 1
     d = X.shape[1]
 
@@ -214,129 +91,200 @@ def pre_process(df_train: pd.DataFrame):
 
     # take log because data is log-normal
     X = np.log(X + 1)
+    X_test_all = np.log(df_clean_te + 1)
 
     # split into train, validation, test
-    X_train, y_train = X.iloc[:train_size], y.iloc[:train_size]
-    X_val, y_val = X.iloc[train_size:valdiation_id], y.iloc[train_size:valdiation_id]
-    X_test, y_test = X.iloc[valdiation_id:], y.iloc[valdiation_id:]
+    X_train, y_train = X.iloc[:train_size], y.iloc[:train_size].values.astype("int64")
+    X_val, y_val = X.iloc[train_size:valdiation_id], y.iloc[train_size:valdiation_id].values.astype("int64")
+    X_test, y_test = X.iloc[valdiation_id:], y.iloc[valdiation_id:].values.astype("int64")
 
     # apply scaler and PCA
     pipe = Pipeline([("scaler", StandardScaler()), ("pca", PCA(n_components=d))])
-    X_train = pipe.fit_transform(X_train)
-    X_test = pipe.transform(X_test)
-    X_val = pipe.transform(X_val)
+    X_train_np = pipe.fit_transform(X_train).astype("float32")
+    X_test_np = pipe.transform(X_test).astype("float32")
+    X_val_np = pipe.transform(X_val).astype("float32")
+    X_test_all_np = pipe.transform(X_test_all).astype("float32")
 
-    return X_train, y_train, X_val, y_val, X_test, y_test
+    X_train = pd.DataFrame(X_train_np, index=X_train.index)
+    X_val = pd.DataFrame(X_val_np, index=X_val.index)
+    X_test = pd.DataFrame(X_test_np, index=X_test.index)
+    X_test_all = pd.DataFrame(X_test_all_np, index=X_test_all.index)
+
+    return X_train, y_train, X_val, y_val, X_test, y_test, X_test_all
 
 
-def run_base_model(X, y, X_val, y_val, cv, model, n_classes=9):
+def run_base_model(X, y, X_val, y_val, X_test_all, cv, model, n_classes):
     # Note: test set only to be used for showing confusion matrix, NOT for hyper param tuning
     # either fix the hyper params, of grid-search them with cv,
     # actually better to fix them here and grid-search them in the notebook
 
-    y_pred = np.zeros((X.shape[0], n_classes), dtype=float)
-    if model == "lgbm":
-        params = {
-            "learning_rate": 0.01,
-            "num_leaves": 500,
-            "n_estimators": 1500,
-            "max_depth": 25,
-            "min_data_in_leaf": 30,
-            "subsample": 0.4,
-            "bagging_freq": 1,
-            "feature_fraction": 0.6,
-            "early_stopping_rounds": 10,
-        }
-        lg = lgb.LGBMClassifier(silent=False, objective="softmax", num_class=n_classes, verbose=1, **params)
-        eval_set = [(X_val, y_val)]
+    eval_set = [(X_val, y_val)]
 
+    y_train_pred = np.zeros((X.shape[0], n_classes), dtype=float)
+    y_test_pred = []
+    for testset in X_test_all:
+        y_test_pred.append(np.zeros((testset.shape[0], n_classes), dtype=float))
+    if model in ["lgbm", "nn"]:
+        if model == "lgbm":
+            params = {
+                "learning_rate": 0.01,
+                "num_leaves": 500,
+                "n_estimators": 1500,
+                "max_depth": 25,
+                "min_data_in_leaf": 30,
+                "subsample": 0.4,
+                "bagging_freq": 1,
+                "feature_fraction": 0.6,
+                "early_stopping_rounds": 10,
+            }
+            clf = lgb.LGBMClassifier(silent=False, objective="softmax", num_class=n_classes, verbose=0, **params)
+        elif model == "nn":
+            clf = MyNN(n_classes=n_classes)
+        else:
+            raise ValueError(model)
+        print("Fitting model on each of the CV splits...")
         for train_index, test_index in cv.split(X, y):
             X_train, X_test = X[train_index], X[test_index]
             y_train, y_test = y[train_index], y[test_index]
-            lg.fit(X_train, y_train, eval_set=eval_set)
-            y_pred[test_index, :] = lg.predict_proba(X_test)
+            print("  fitting...")
+            clf.fit(X_train, y_train, eval_set=eval_set)
+            y_train_pred[test_index, :] = clf.predict_proba(X_test)
 
-    elif model in ["rf", "knn"]:
-        # TODO: set parameters
+        print("Fitting model on the whole train data...")
+        clf.fit(X, y, eval_set=eval_set)
+        for i in range(len(X_test_all)):
+            y_test_pred[i][:, :] = clf.predict_proba(X_test_all[i])
+
+    elif model in ["rf", "knn", "et"]:
         if model == "rf":
-            clf = RandomForestClassifier(n_estimators=1500, n_jobs=-1)
+            clf = RandomForestClassifier(n_jobs=-1, n_estimators=1000,
+                                         max_depth=32, max_features=0.6, min_samples_leaf=5, verbose=1)
         elif model == "knn":
-            k = 5  # TODO
+            k = 125
             clf = KNeighborsClassifier(n_neighbors=k, n_jobs=-1)
+        elif model == "et":
+            clf = ExtraTreesClassifier(n_estimators=10,#00,
+                                       n_jobs=-1, max_depth=32, max_features=0.7, max_samples=0.6,
+                                       min_samples_leaf=1, verbose=1)
         else:
             raise ValueError(f"Unknown model: {model}")
 
+        print("Fitting model on each of the CV splits...")
         for train_index, test_index in cv.split(X, y):
             X_train, X_test = X[train_index], X[test_index]
             y_train, y_test = y[train_index], y[test_index]
+            print("  fitting...")
             clf.fit(X_train, y_train)
-            y_pred[test_index, :] = clf.predict_proba(X_test)
+            y_train_pred[test_index, :] = clf.predict_proba(X_test)
+
+        print("Fitting model on the whole train data...")
+        clf.fit(X, y)
+        for i in range(len(X_test_all)):
+            y_test_pred[i][:, :] = clf.predict_proba(X_test_all[i])
 
     else:
         raise ValueError(f"Unknown model: {model}")
 
     # print confusion matrix for each of the models
-    cm = confusion_matrix_df(y_true=y, y_pred=y_pred.argmax(axis=1))
+    cm = confusion_matrix_df(y_true=y, y_pred=y_train_pred.argmax(axis=1))
     print(cm)
-    return y_pred
+    return y_train_pred, y_test_pred
 
 
-def tune(X_train, y_train, cv):
-    param_grid = {
-        "max_depth": [8, 16, 32],
-        "min_samples_leaf": [5, 10, 30],
-        "max_features": [0.4, 0.6],
-    }
+def tune(X_train: np.array, y_train: np.array, X_val, y_val, n_classes, cv):
+    # train_nn(X_train, y_train, X_val, y_val, n_classes)
 
-    rf = RandomForestClassifier(n_estimators=700, n_jobs=1)
+    # param_grid = {
+    #     "n_neighbors": [7, 11]
+    # }
+    #
+    # clf = KNeighborsClassifier(n_jobs=4)
+    #
+    # grid_search = GridSearchCV(clf, n_jobs=2, param_grid=param_grid, cv=cv, scoring="neg_log_loss", verbose=2)
+    # grid_search.fit(X_train, y_train)
+    # print(f"Score: {grid_search.best_score_}")
+    #
+    # print(f"Best params: {grid_search.best_params_}")
 
-    grid_search = GridSearchCV(rf, n_jobs=-1, param_grid=param_grid, cv=cv, scoring="neg_log_loss", verbose=2)
-    grid_search.fit(X_train, y_train)
-    print(f"Score: {grid_search.best_score_}")
-
-    print(f"Best params: {grid_search.best_params_}")
     sys.exit(0)
 
 
 def main(data_dir="data/"):
-    df_train = load_data(data_dir=data_dir)
-    X_train, y_train, X_val, y_val, X_test, y_test = pre_process(df_train)
+    df_train, df_test = load_data(data_dir=data_dir)
+    n_classes = 9
+    X_train, y_train, X_val, y_val, X_test, y_test, X_test_sub = pre_process(df_train, df_test)
 
     # use the data as following:
     # 1. train: for training AND hyper-param tuning
     # 2. validation: for early stopping
     # 3. test: for final evaluation
 
-    cv = StratifiedKFold(10, shuffle=True, random_state=442)
+    cv = StratifiedKFold(7, shuffle=True, random_state=442)
 
-    tune(X_train, y_train, cv=cv)
+    # tune(X_train, y_train, X_val, y_val, n_classes=n_classes, cv=cv)
 
-    meta_features = []
+    all_meta_feats_tr = []
+    all_meta_feats_te = []
+    all_meta_feats_sub = []
 
-    models = ["mlp", "lgbm", "rf", "et", "knn", "svm"]
+    models = ["et", "nn"] #["lgbm", "knn", "et", "rf", "nn"]
     feature_names = []
     for model in models:
         print(f"#################### RUNNING {model} base model ####################")
-        meta_features = run_base_model(X=X_train, y=y_train, X_val=X_val, y_val=y_val, cv=cv, model=model)
-        meta_features.append(meta_features)
-        feature_names.extend([f"{model}_{i+1}" for i in range(meta_features.shape[1])])
+        meta_feats_tr, meta_feats_te = run_base_model(X=X_train.values, y=y_train,
+                                                      X_val=X_val.values, y_val=y_val,
+                                                      X_test_all=[X_test.values, X_test_sub.values],
+                                                      n_classes=n_classes,
+                                                      cv=cv, model=model)
+        all_meta_feats_tr.append(meta_feats_tr)
+        all_meta_feats_te.append(meta_feats_te[0])
+        all_meta_feats_sub.append(meta_feats_te[1])
+        feature_names.extend([f"{model}_{i+1}" for i in range(meta_feats_tr.shape[1])])
 
-
-    meta_features = np.hstack(meta_features)
+    all_meta_feats_tr = np.hstack(all_meta_feats_tr)
+    all_meta_feats_te = np.hstack(all_meta_feats_te)
+    all_meta_feats_sub = np.hstack(all_meta_feats_sub)
     # convert to DF and save for further analysis
+    all_meta_feats_tr = pd.DataFrame(all_meta_feats_tr, columns=feature_names, index=X_train.index)
+    all_meta_feats_tr["y_true"] = y_train
+    all_meta_feats_te = pd.DataFrame(all_meta_feats_te, columns=feature_names, index=X_test.index)
+    all_meta_feats_te["y_true"] = y_test
+    all_meta_feats_sub = pd.DataFrame(all_meta_feats_sub, columns=feature_names, index=X_test_sub.index)
+    all_meta_feats_tr.to_csv("meta_features_train.csv")
+    all_meta_feats_te.to_csv("meta_features_test.csv")
+    all_meta_feats_sub.to_csv("meta_features_submission.csv")
+    print(f"Saved train meta features. Dim: {all_meta_feats_tr.shape}")
+    print(f"Saved test meta features. Dim: {all_meta_feats_te.shape}")
+    print(f"Saved submission meta features. Dim: {all_meta_feats_sub.shape}")
 
-
+    all_meta_feats_tr.drop(columns=["y_true"], inplace=True)
+    all_meta_feats_te.drop(columns=["y_true"], inplace=True)
 
     # train 2nd level model on the meta features
     scaler = StandardScaler()
-    meta_features = scaler.fit_transform(meta_features)
+    all_meta_feats_tr = scaler.fit_transform(all_meta_feats_tr)
+    all_meta_feats_te = scaler.transform(all_meta_feats_te)
+    all_meta_feats_sub = scaler.transform(all_meta_feats_sub)
 
-    print(f"Num features at level 2: {meta_features.shape[1]}")
+    clf = RandomForestClassifier(n_estimators=1500, n_jobs=-1, verbose=1,
+                                 max_depth=32, max_features=0.6, min_samples_leaf=5)
+    clf.fit(all_meta_feats_tr, y_train)
+    y_pred_tr = clf.predict_proba(all_meta_feats_tr)
+    y_pred_te = clf.predict_proba(all_meta_feats_te)
+    y_pred_sub = clf.predict_proba(all_meta_feats_sub)
 
-    clf = XGBClassifier(n_estimators=1000, max_depth=8, subsample=0.4, n_jobs=-1)
-    final_scores = cross_val_score(clf, meta_features, y, scoring="neg_log_loss", cv=5, n_jobs=-1, verbose=1)
+    cm_tr = confusion_matrix_df(y_true=y_train, y_pred=y_pred_tr.argmax(axis=1))
+    cm_te = confusion_matrix_df(y_true=y_test, y_pred=y_pred_te.argmax(axis=1))
 
-    print(f"Level 2 scores: \n{final_scores}")
+    print("Confusion matrix train:")
+    print(cm_tr)
+
+    print("Confusion matrix test:")
+    print(cm_te)
+
+    y_pred_sub = pd.DataFrame(y_pred_sub, index=X_test_sub.index,
+                              columns=[f"Class_{i}" for i in range(1,n_classes+1)])
+    y_pred_sub.to_csv("submission.csv")
 
 
 if __name__ == '__main__':
