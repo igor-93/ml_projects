@@ -1,4 +1,4 @@
-from os.path import join
+from os.path import join, isdir
 from operator import itemgetter
 import sys
 
@@ -22,7 +22,7 @@ from skopt.utils import use_named_args
 
 from xgboost import XGBClassifier
 
-from otto.nn_model import train_nn, MyNN
+from otto.nn_model import MyNN
 
 main_params = {
     "cv": 5,  # 10
@@ -47,9 +47,9 @@ def confusion_matrix_df(y_true, y_pred, n_classes=9):
 
 
 def load_data(data_dir):
-    assert os.path.isdir(data_dir)
-    file_train = os.path.join(data_dir, "train.csv")
-    file_test = os.path.join(data_dir, "test.csv")
+    assert isdir(data_dir)
+    file_train = join(data_dir, "train.csv")
+    file_test = join(data_dir, "test.csv")
     df_train = pd.read_csv(file_train, index_col=0)
     df_test = pd.read_csv(file_test, index_col=0)
 
@@ -61,7 +61,7 @@ def load_data(data_dir):
     return df_train, df_test
 
 
-def pre_process(df_train: pd.DataFrame, df_test: pd.DataFrame):
+def pre_process(df_train: pd.DataFrame, df_test: pd.DataFrame, drop_feats=True):
     n, d = df_train.shape
     d = d - 1 # remove target dim
     feat_cols = [c for c in df_train.columns if "feat" in c]
@@ -79,15 +79,18 @@ def pre_process(df_train: pd.DataFrame, df_test: pd.DataFrame):
                           'feat_5', 'feat_65', 'feat_73']
 
     # split into X, y
-    df_clean = df_train.drop(columns=to_drop_before_pca)
-    df_clean_te = df_test.drop(columns=to_drop_before_pca)
+    if drop_feats:
+        df_clean = df_train.drop(columns=to_drop_before_pca)
+        df_clean_te = df_test.drop(columns=to_drop_before_pca)
+    else:
+        df_clean = df_train
+        df_clean_te = df_test
     X = df_clean.drop(columns="target").astype(dtype=float)
     y = df_clean["target"] - 1
     d = X.shape[1]
 
-    train_size = int(0.7 * X.shape[0])
-    valdiation_id = int(0.8 * X.shape[0])
-    print(f"train_size: {train_size}, d: {d}")
+    train_size = int(0.92 * X.shape[0]) # 0.92
+    valdiation_id = int(0.99 * X.shape[0]) # 0.99
 
     # take log because data is log-normal
     X = np.log(X + 1)
@@ -97,6 +100,9 @@ def pre_process(df_train: pd.DataFrame, df_test: pd.DataFrame):
     X_train, y_train = X.iloc[:train_size], y.iloc[:train_size].values.astype("int64")
     X_val, y_val = X.iloc[train_size:valdiation_id], y.iloc[train_size:valdiation_id].values.astype("int64")
     X_test, y_test = X.iloc[valdiation_id:], y.iloc[valdiation_id:].values.astype("int64")
+    print(f"train size      : {X_train.shape}")
+    print(f"test size       : {X_test.shape}")
+    print(f"validation size : {X_val.shape}")
 
     # apply scaler and PCA
     pipe = Pipeline([("scaler", StandardScaler()), ("pca", PCA(n_components=d))])
@@ -137,7 +143,8 @@ def run_base_model(X, y, X_val, y_val, X_test_all, cv, model, n_classes):
                 "feature_fraction": 0.6,
                 "early_stopping_rounds": 10,
             }
-            clf = lgb.LGBMClassifier(silent=False, objective="softmax", num_class=n_classes, verbose=0, **params)
+            clf = lgb.LGBMClassifier(silent=False, objective="softmax", num_class=n_classes, verbose=0, n_jobs=8,
+                                     **params)
         elif model == "nn":
             clf = MyNN(n_classes=n_classes)
         else:
@@ -163,7 +170,7 @@ def run_base_model(X, y, X_val, y_val, X_test_all, cv, model, n_classes):
             k = 125
             clf = KNeighborsClassifier(n_neighbors=k, n_jobs=-1)
         elif model == "et":
-            clf = ExtraTreesClassifier(n_estimators=10,#00,
+            clf = ExtraTreesClassifier(n_estimators=1000,
                                        n_jobs=-1, max_depth=32, max_features=0.7, max_samples=0.6,
                                        min_samples_leaf=1, verbose=1)
         else:
@@ -191,8 +198,34 @@ def run_base_model(X, y, X_val, y_val, X_test_all, cv, model, n_classes):
     return y_train_pred, y_test_pred
 
 
-def tune(X_train: np.array, y_train: np.array, X_val, y_val, n_classes, cv):
-    # train_nn(X_train, y_train, X_val, y_val, n_classes)
+def tune(X_train: np.array, y_train: np.array, X_val, y_val, X_test, y_test, n_classes, cv):
+    # params = {
+    #     "learning_rate": 0.01,
+    #     "num_leaves": 500,
+    #     "n_estimators": 1500,
+    #     "max_depth": 25,
+    #     "min_data_in_leaf": 30,
+    #     "subsample": 0.4,
+    #     "bagging_freq": 1,
+    #     "feature_fraction": 0.6,
+    #     "early_stopping_rounds": 10,
+    # }
+    # clf = lgb.LGBMClassifier(silent=True, objective="softmax", num_class=n_classes, verbose=0, **params)
+
+    eval_set = [(X_val.values, y_val)]
+
+    assert (y_train < n_classes).all()
+    assert 0 in y_train
+    assert (y_test < n_classes).all()
+    assert 0 in y_test
+
+    clf = MyNN(n_classes=n_classes)
+    clf.fit(X_train.values, y_train, eval_set=eval_set)
+
+    y_pred = clf.predict_proba(X_test.values)
+    y_pred = np.argmax(y_pred, axis=1)
+    cm = confusion_matrix_df(y_pred=y_pred, y_true=y_test)
+    print(cm)
 
     # param_grid = {
     #     "n_neighbors": [7, 11]
@@ -219,15 +252,15 @@ def main(data_dir="data/"):
     # 2. validation: for early stopping
     # 3. test: for final evaluation
 
-    cv = StratifiedKFold(7, shuffle=True, random_state=442)
+    cv = StratifiedKFold(5, shuffle=True, random_state=442)
 
-    # tune(X_train, y_train, X_val, y_val, n_classes=n_classes, cv=cv)
+    # tune(X_train, y_train, X_val, y_val, X_test, y_test, n_classes=n_classes, cv=cv)
 
     all_meta_feats_tr = []
     all_meta_feats_te = []
     all_meta_feats_sub = []
 
-    models = ["et", "nn"] #["lgbm", "knn", "et", "rf", "nn"]
+    models = ["nn", "knn"] # ["lgbm", "knn", "rf", "nn"]
     feature_names = []
     for model in models:
         print(f"#################### RUNNING {model} base model ####################")
@@ -250,9 +283,9 @@ def main(data_dir="data/"):
     all_meta_feats_te = pd.DataFrame(all_meta_feats_te, columns=feature_names, index=X_test.index)
     all_meta_feats_te["y_true"] = y_test
     all_meta_feats_sub = pd.DataFrame(all_meta_feats_sub, columns=feature_names, index=X_test_sub.index)
-    all_meta_feats_tr.to_csv("meta_features_train.csv")
-    all_meta_feats_te.to_csv("meta_features_test.csv")
-    all_meta_feats_sub.to_csv("meta_features_submission.csv")
+    all_meta_feats_tr.to_csv("meta_features_train_fixed_nn.csv")
+    all_meta_feats_te.to_csv("meta_features_test_fixed_nn.csv")
+    all_meta_feats_sub.to_csv("meta_features_submission_fixed_nn.csv")
     print(f"Saved train meta features. Dim: {all_meta_feats_tr.shape}")
     print(f"Saved test meta features. Dim: {all_meta_feats_te.shape}")
     print(f"Saved submission meta features. Dim: {all_meta_feats_sub.shape}")
@@ -266,8 +299,18 @@ def main(data_dir="data/"):
     all_meta_feats_te = scaler.transform(all_meta_feats_te)
     all_meta_feats_sub = scaler.transform(all_meta_feats_sub)
 
-    clf = RandomForestClassifier(n_estimators=1500, n_jobs=-1, verbose=1,
-                                 max_depth=32, max_features=0.6, min_samples_leaf=5)
+    params = {
+        "learning_rate": 0.01,
+        "num_leaves": 8,
+        "n_estimators": 800,
+        "max_depth": 25,
+        "min_data_in_leaf": 30,
+        "subsample": 0.8,
+        "bagging_freq": 5,
+        "feature_fraction": 0.4,
+    }
+    clf = lgb.LGBMClassifier(silent=False, objective="softmax", num_class=n_classes, verbose=0, **params)
+
     clf.fit(all_meta_feats_tr, y_train)
     y_pred_tr = clf.predict_proba(all_meta_feats_tr)
     y_pred_te = clf.predict_proba(all_meta_feats_te)
