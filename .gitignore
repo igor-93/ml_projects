@@ -2,13 +2,21 @@
 # project folders to stay private
 .DS_Store
 
+### Remove data and models
 *.zip
+cv_course_udacity/p1_facial_keypoints/images
+cv_course_udacity/p1_facial_keypoints/data
+cv_course_udacity/p1_facial_keypoints/saved_models
+cv_course_udacity/p1_facial_keypoints/.ipynb_checkpoints
+
+*.csv
 
 ### Python template
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+.ipynb_checkpoints/
 
 # IDE
 .idea/

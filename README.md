@@ -21,6 +21,8 @@ TODO: add tests for KMedoids
     
 - feature engineering
     - e.g. tech indicators at different scales for fin markets
+    - [examples](https://www.kaggle.com/shahules/an-overview-of-encoding-techniques) 
+    for categorical features
     
 - feature analysis
     - check correlation:
