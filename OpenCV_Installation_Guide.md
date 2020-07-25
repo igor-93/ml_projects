@@ -1,7 +1,10 @@
 # OpenCV Installation Guide:
 
 [Official guide](https://docs.opencv.org/master/d7/d9f/tutorial_linux_install.html)
+
 Below command is the adjusted version of [this](https://gist.github.com/raulqf/f42c718a658cddc16f9df07ecc627be7)
+
+The installation includes Python 3 interface and CUDA.
 
 inside of opencv folder:
 `mkdir build & cd build`
