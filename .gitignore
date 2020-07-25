@@ -9,6 +9,9 @@ cv_course_udacity/p1_facial_keypoints/data
 cv_course_udacity/p1_facial_keypoints/saved_models
 cv_course_udacity/p1_facial_keypoints/.ipynb_checkpoints
 
+airbuss_ship_detection/train_v2
+airbuss_ship_detection/test_v2
+
 *.csv
 
 ### Python template
