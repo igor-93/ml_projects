@@ -8,13 +8,13 @@ This folder contains my work done for the
 1. Intro to Computer Vision, which covers basic computer vision topics like image processing, 
 feature extraction (Canny edge detection, ORB descriptor, HoG, etc...) done manually 
 or through training a convolutional neural network (CNN) using PyTorch. 
-The project here was to train a CNN to detect facial key-points.
+**The project** here was to train a CNN to detect facial key-points.
 2. Advanced Computer Vision and Deep Learning, which was focused into deep learning topics. 
 Main focus was on object detection (Fast R-CNN, Faster R-CNN, YOLO) and 
 image segmentation (fully convolutional networks) and RNNs in combination with attention models. 
-The project was image captioning implemented with a deep learning model which combined CNN with RNN.
+**The project** was image captioning implemented with a deep learning model which combined CNN with RNN.
 3. Object Tracking and Localization, which covers how a robot can move and sense the world around it.
-THe project was implementation of graph-based SLAM of a simple robot in a 2D world.
+**The project** was implementation of graph-based SLAM of a simple robot in a 2D world.
 
 
 **Certificate**: [WADLQWCW](https://graduation.udacity.com/confirm/WADLQWCW)
