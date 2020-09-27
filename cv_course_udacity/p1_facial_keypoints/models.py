@@ -1,5 +1,3 @@
-## TODO: define the convolutional neural network architecture
-
 import torch
 from torch.autograd import Variable
 import torch.nn as nn
@@ -18,11 +16,6 @@ class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
         # input is of shape 224 x 224
-        
-        ## TODO: Define all the layers of this CNN, the only requirements are:
-        ## 1. This network takes in a square (same width and height), grayscale image as input
-        ## 2. It ends with a linear layer that represents the keypoints
-        ## it's suggested that you make this last layer output 136 values, 2 for each of the 68 keypoint (x, y) pairs
         
         # As an example, you've been given a convolutional layer, which you may (but don't have to) change:
         # 1 input image channel (grayscale), 32 output channels/feature maps, 5x5 square convolution kernel
