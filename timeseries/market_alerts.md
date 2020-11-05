@@ -27,7 +27,7 @@ so all tickers must be available at Yahoo. Before subscribing for an alert,
 please check that the indicator exists in Yahoo.
     
 ## How to subscribe to an alert:
-In order to subscribe to an alert send an email to igor.service.acc@gmail.com.
+In order to subscribe to an alert send an email to igor.service.acc (at) gmail.com.
 The subject **must** contain "Add alert" (capitalization is not mandatory).
 
 The body must be correct **JSON without any additional text**.
