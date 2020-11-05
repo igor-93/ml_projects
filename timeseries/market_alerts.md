@@ -2,6 +2,9 @@
 
 The app sends emails when some market alerts are triggered.
 
+The goal is the eventually have bunch of different types of alerts and even some very complex alerts,
+e.g. alerts that trigger on acceleration factor.
+
 ### Currently supported alerts
 1. Absolute threshold:
     1. Name: `abs_threshold`
