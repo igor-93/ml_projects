@@ -20,6 +20,28 @@ e.g. alerts that trigger on acceleration factor.
 1. All-time high/low:
     1. Name: `all_time_hilo`
     1. Parameters: no parameters
+    1. Note: currently it is not actually comparing to all-time, but to all-available data
+1. [Bollinger Band](https://en.wikipedia.org/wiki/Bollinger_Bands)
+    1. Name: `bollinger_band`
+    1. Parameters:
+        1. `band_width`: describes how many standard deviations should the bands be away from the mean.
+        Example values: 1,2,3.... Default is 2.
+        1. `std_history`: time-range used to estimate the standard deviation. 
+        Example value `7d` means that last 7 days will be used to get the standard deviation of prices.
+        Default is `7d`.
+    1. Description: alert triggers when prices crosses lower or upper bound. See example below.
+    1. Example of the Bollinger Bands on S&P 500 index:
+    ![Bollinger Band](market_alerts_examples/bollinger_band.png)
+1. Crossing Moving Averages (MA)
+    1. Name: `crossing_moving_average`
+    1. Parameters:
+        1. `short_window`: time-range used to calculate more recent moving average. E.g. `7d`
+        1. `long_window`: time-range used to calculate more long-term moving average. E.g. `14d`
+        1. `threshold`: value by which long- and shor-window MAs must differ in order to trigger and alert.
+    1. Description: alert triggers when short-window MA crosses the long-window MA and 
+    has a difference of at least `threshold`
+    1. Example plot of 7 and 14 days moving averages of S&P 500 index:
+    ![Moving Averages](market_alerts_examples/crossing_moving_average.png)
     
 ### Currently supported data downlaoders
 Currently only [Yahoo](https://finance.yahoo.com/) is supported, 
